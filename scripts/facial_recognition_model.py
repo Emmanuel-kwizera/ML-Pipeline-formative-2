@@ -78,56 +78,33 @@ def train_facial_recognition_model(X, y, model_type='random_forest'):
     
     print(f"Dataset info: {n_samples} samples, {n_classes} classes")
     
-    # For very small datasets, use all data (no split)
+    # CRITICAL: For small datasets, check if we can do a stratified split
     # Stratified split requires test set to have at least n_classes samples
-    # With 12 samples and 4 classes, we can't do a proper split
-    try:
-        if n_samples < n_classes * 3:
-            print(f"⚠ Very small dataset ({n_samples} samples, {n_classes} classes)")
-            print("  Cannot do proper train/test split - using all data for training and evaluation")
-            X_train, X_test = X, X
-            y_train, y_test = y, y
-        elif n_samples < 20:
-            # Small dataset: check if we can do a split
-            test_size_standard = 0.2
-            estimated_test_samples = int(test_size_standard * n_samples)
-            
-            if estimated_test_samples < n_classes:
-                print(f"⚠ Small dataset ({n_samples} samples, {n_classes} classes)")
-                print(f"  Estimated test samples ({estimated_test_samples}) < classes ({n_classes})")
-                print("  Using all data for training and evaluation (no test split)")
-                X_train, X_test = X, X
-                y_train, y_test = y, y
-            else:
-                # Try to do a split, but catch any errors
-                try:
-                    X_train, X_test, y_train, y_test = train_test_split(
-                        X, y, test_size=test_size_standard, random_state=42, stratify=y
-                    )
-                except ValueError as e:
-                    # If stratified split fails, use all data
-                    print(f"⚠ Stratified split failed: {str(e)}")
-                    print("  Using all data for training and evaluation")
-                    X_train, X_test = X, X
-                    y_train, y_test = y, y
-        else:
-            # Standard split for larger datasets
-            try:
-                X_train, X_test, y_train, y_test = train_test_split(
-                    X, y, test_size=0.2, random_state=42, stratify=y
-                )
-            except ValueError as e:
-                # Fallback: try without stratification
-                print(f"⚠ Stratified split failed, using non-stratified split: {str(e)}")
-                X_train, X_test, y_train, y_test = train_test_split(
-                    X, y, test_size=0.2, random_state=42
-                )
-    except Exception as e:
-        # Ultimate fallback: use all data if anything goes wrong
-        print(f"⚠ Error during data splitting: {str(e)}")
-        print("  Using all data for training and evaluation")
+    # Calculate what test size would give us
+    test_size_standard = 0.2
+    estimated_test_samples = max(1, int(test_size_standard * n_samples))  # At least 1
+    
+    # If we can't get enough test samples for stratification, use all data
+    can_do_stratified_split = (estimated_test_samples >= n_classes) and (n_samples >= n_classes * 3)
+    
+    if not can_do_stratified_split:
+        print(f"⚠ Small dataset detected ({n_samples} samples, {n_classes} classes)")
+        print(f"  Estimated test samples ({estimated_test_samples}) < classes ({n_classes}) OR insufficient data")
+        print("  Using all data for training and evaluation (no test split)")
         X_train, X_test = X, X
         y_train, y_test = y, y
+    else:
+        # We have enough data for a proper split
+        try:
+            X_train, X_test, y_train, y_test = train_test_split(
+                X, y, test_size=test_size_standard, random_state=42, stratify=y
+            )
+        except ValueError as e:
+            # If stratified split fails for any reason, use all data
+            print(f"⚠ Stratified split failed: {str(e)}")
+            print("  Using all data for training and evaluation")
+            X_train, X_test = X, X
+            y_train, y_test = y, y
     
     print(f"Training set: {len(X_train)} images")
     print(f"Test set: {len(X_test)} images")
