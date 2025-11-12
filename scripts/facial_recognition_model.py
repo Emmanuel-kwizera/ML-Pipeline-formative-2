@@ -76,57 +76,58 @@ def train_facial_recognition_model(X, y, model_type='random_forest'):
     n_samples = len(X)
     n_classes = len(np.unique(y))
     
-    # Check if we can do a proper stratified split
-    # For stratified split, test set needs at least n_classes samples
-    # Try with 20% test size first
-    test_size_standard = 0.2
-    estimated_test_samples = int(test_size_standard * n_samples)
+    print(f"Dataset info: {n_samples} samples, {n_classes} classes")
     
-    # If standard test size would give fewer samples than classes, we can't do stratified split
-    if estimated_test_samples < n_classes or n_samples < n_classes * 3:
-        print(f"⚠ Very small dataset ({n_samples} samples, {n_classes} classes)")
-        print("  Cannot do proper train/test split - using all data for training and evaluation")
-        X_train, X_test = X, X
-        y_train, y_test = y, y
-    elif n_samples < 20:
-        # Small dataset: try to use a smaller test size that still has enough samples
-        # Calculate minimum test size needed (at least n_classes samples)
-        min_test_samples = n_classes
-        test_size = min_test_samples / n_samples
-        
-        # Cap at 20% to avoid using too much data for testing
-        test_size = min(test_size, 0.2)
-        
-        # Verify we'll have enough test samples
-        estimated_test_samples = int(test_size * n_samples)
-        if estimated_test_samples < n_classes:
-            print(f"⚠ Small dataset ({n_samples} samples, {n_classes} classes)")
-            print("  Using all data for training and evaluation (no test split)")
+    # For very small datasets, use all data (no split)
+    # Stratified split requires test set to have at least n_classes samples
+    # With 12 samples and 4 classes, we can't do a proper split
+    try:
+        if n_samples < n_classes * 3:
+            print(f"⚠ Very small dataset ({n_samples} samples, {n_classes} classes)")
+            print("  Cannot do proper train/test split - using all data for training and evaluation")
             X_train, X_test = X, X
             y_train, y_test = y, y
-        else:
-            try:
-                X_train, X_test, y_train, y_test = train_test_split(
-                    X, y, test_size=test_size, random_state=42, stratify=y
-                )
-            except ValueError as e:
-                # If stratified split still fails, use all data
-                print(f"⚠ Stratified split failed: {str(e)}")
-                print("  Using all data for training and evaluation")
+        elif n_samples < 20:
+            # Small dataset: check if we can do a split
+            test_size_standard = 0.2
+            estimated_test_samples = int(test_size_standard * n_samples)
+            
+            if estimated_test_samples < n_classes:
+                print(f"⚠ Small dataset ({n_samples} samples, {n_classes} classes)")
+                print(f"  Estimated test samples ({estimated_test_samples}) < classes ({n_classes})")
+                print("  Using all data for training and evaluation (no test split)")
                 X_train, X_test = X, X
                 y_train, y_test = y, y
-    else:
-        # Standard split for larger datasets
-        try:
-            X_train, X_test, y_train, y_test = train_test_split(
-                X, y, test_size=0.2, random_state=42, stratify=y
-            )
-        except ValueError as e:
-            # Fallback: try without stratification
-            print(f"⚠ Stratified split failed, using non-stratified split: {str(e)}")
-            X_train, X_test, y_train, y_test = train_test_split(
-                X, y, test_size=0.2, random_state=42
-            )
+            else:
+                # Try to do a split, but catch any errors
+                try:
+                    X_train, X_test, y_train, y_test = train_test_split(
+                        X, y, test_size=test_size_standard, random_state=42, stratify=y
+                    )
+                except ValueError as e:
+                    # If stratified split fails, use all data
+                    print(f"⚠ Stratified split failed: {str(e)}")
+                    print("  Using all data for training and evaluation")
+                    X_train, X_test = X, X
+                    y_train, y_test = y, y
+        else:
+            # Standard split for larger datasets
+            try:
+                X_train, X_test, y_train, y_test = train_test_split(
+                    X, y, test_size=0.2, random_state=42, stratify=y
+                )
+            except ValueError as e:
+                # Fallback: try without stratification
+                print(f"⚠ Stratified split failed, using non-stratified split: {str(e)}")
+                X_train, X_test, y_train, y_test = train_test_split(
+                    X, y, test_size=0.2, random_state=42
+                )
+    except Exception as e:
+        # Ultimate fallback: use all data if anything goes wrong
+        print(f"⚠ Error during data splitting: {str(e)}")
+        print("  Using all data for training and evaluation")
+        X_train, X_test = X, X
+        y_train, y_test = y, y
     
     print(f"Training set: {len(X_train)} images")
     print(f"Test set: {len(X_test)} images")
