@@ -72,10 +72,32 @@ def train_facial_recognition_model(X, y, model_type='random_forest'):
     print(f"TRAINING FACIAL RECOGNITION MODEL ({model_type.upper()})")
     print("="*60)
     
-    # Split data
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.2, random_state=42, stratify=y
-    )
+    # Split data - handle small datasets
+    n_samples = len(X)
+    n_classes = len(np.unique(y))
+    
+    # For small datasets, use smaller test size or skip split
+    if n_samples < 20:
+        # Use smaller test size for small datasets
+        # Ensure test set has at least as many samples as classes
+        min_test_size = max(2, n_classes)  # At least 2 samples or number of classes
+        test_size = min(0.15, min_test_size / n_samples)  # Max 15% or minimum needed
+        
+        # If still too small, use all data for training (no test split)
+        if test_size * n_samples < n_classes:
+            print(f"⚠ Very small dataset ({n_samples} samples, {n_classes} classes)")
+            print("  Using all data for training (no test split)")
+            X_train, X_test = X, X
+            y_train, y_test = y, y
+        else:
+            X_train, X_test, y_train, y_test = train_test_split(
+                X, y, test_size=test_size, random_state=42, stratify=y
+            )
+    else:
+        # Standard split for larger datasets
+        X_train, X_test, y_train, y_test = train_test_split(
+            X, y, test_size=0.2, random_state=42, stratify=y
+        )
     
     print(f"Training set: {len(X_train)} images")
     print(f"Test set: {len(X_test)} images")
