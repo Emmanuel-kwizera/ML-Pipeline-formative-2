@@ -10,6 +10,7 @@ import pandas as pd
 from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
+from sklearn.preprocessing import StandardScaler, LabelEncoder
 from sklearn.metrics import accuracy_score, f1_score, classification_report, confusion_matrix
 import joblib
 import warnings
@@ -58,9 +59,15 @@ def load_and_prepare_data():
         print("⚠ Warning: NaN values found in features. Filling with 0...")
         X = np.nan_to_num(X, nan=0.0)
     
-    return X, y, df, feature_cols
+    # Encode labels to numeric (needed for XGBoost and better compatibility)
+    label_encoder = LabelEncoder()
+    y_encoded = label_encoder.fit_transform(y)
+    
+    print(f"✓ Label encoding: {dict(zip(label_encoder.classes_, label_encoder.transform(label_encoder.classes_)))}")
+    
+    return X, y, y_encoded, df, feature_cols, label_encoder
 
-def train_facial_recognition_model(X, y, model_type='random_forest'):
+def train_facial_recognition_model(X, y, y_encoded, label_encoder, model_type='random_forest'):
     """
     Train facial recognition model
     Args:
@@ -109,52 +116,81 @@ def train_facial_recognition_model(X, y, model_type='random_forest'):
     print(f"Training set: {len(X_train)} images")
     print(f"Test set: {len(X_test)} images")
     
+    # Scale features for better performance (especially for Logistic Regression and XGBoost)
+    scaler = StandardScaler()
+    X_train_scaled = scaler.fit_transform(X_train)
+    X_test_scaled = scaler.transform(X_test)
+    
+    # Encode labels for training
+    y_train_encoded = label_encoder.transform(y_train) if len(set(y_train)) > 1 else y_train
+    y_test_encoded = label_encoder.transform(y_test) if len(set(y_test)) > 1 else y_test
+    
     # Train model based on type
+    # Choose whether to use scaled features based on model type
+    use_scaled = model_type in ['logistic_regression', 'xgboost']
+    X_train_final = X_train_scaled if use_scaled else X_train
+    X_test_final = X_test_scaled if use_scaled else X_test
+    
     if model_type == 'random_forest':
+        # Random Forest works well with raw features
         model = RandomForestClassifier(
-            n_estimators=100,
-            max_depth=20,
-            min_samples_split=5,
-            min_samples_leaf=2,
+            n_estimators=200,  # Increased for better performance
+            max_depth=15,  # Reduced to prevent overfitting on small dataset
+            min_samples_split=3,  # Reduced for small dataset
+            min_samples_leaf=1,  # Reduced for small dataset
+            max_features='sqrt',  # Better for high-dimensional data
             random_state=42,
             n_jobs=-1,
             verbose=0
         )
+        model.fit(X_train_final, y_train_encoded)
     elif model_type == 'logistic_regression':
+        # Logistic Regression benefits from scaled features
         model = LogisticRegression(
-            max_iter=1000,
+            max_iter=2000,  # Increased iterations
             random_state=42,
             multi_class='multinomial',
             solver='lbfgs',
-            C=1.0
+            C=0.1,  # Reduced for regularization (better for small datasets)
+            penalty='l2'
         )
+        model.fit(X_train_final, y_train_encoded)
     elif model_type == 'xgboost':
         try:
             from xgboost import XGBClassifier
+            # XGBoost needs numeric labels and benefits from scaled features
             model = XGBClassifier(
                 n_estimators=100,
-                max_depth=6,
-                learning_rate=0.1,
+                max_depth=4,  # Reduced to prevent overfitting
+                learning_rate=0.05,  # Reduced learning rate for better convergence
+                subsample=0.8,  # Add subsampling for regularization
+                colsample_bytree=0.8,  # Feature subsampling
                 random_state=42,
-                eval_metric='mlogloss'
+                eval_metric='mlogloss',
+                use_label_encoder=False  # Use native label encoding
             )
+            model.fit(X_train_final, y_train_encoded)
         except ImportError:
             print("⚠ XGBoost not available, using Random Forest instead")
             model = RandomForestClassifier(
-                n_estimators=100,
-                max_depth=20,
+                n_estimators=200,
+                max_depth=15,
                 random_state=42,
                 n_jobs=-1
             )
+            model.fit(X_train_final, y_train_encoded)
     else:
         raise ValueError(f"Unknown model type: {model_type}")
     
     print(f"\nTraining {model_type} model...")
-    model.fit(X_train, y_train)
     
-    # Predictions
-    y_train_pred = model.predict(X_train)
-    y_test_pred = model.predict(X_test)
+    # Predictions (decode back to original labels)
+    y_train_pred_encoded = model.predict(X_train_final)
+    y_test_pred_encoded = model.predict(X_test_final)
+    
+    # Decode predictions back to original labels
+    y_train_pred = label_encoder.inverse_transform(y_train_pred_encoded)
+    y_test_pred = label_encoder.inverse_transform(y_test_pred_encoded)
     
     # Calculate metrics
     train_accuracy = accuracy_score(y_train, y_train_pred)
@@ -216,7 +252,7 @@ def train_facial_recognition_model(X, y, model_type='random_forest'):
     print(f"  (Mean training confidence: {np.mean(train_confidences):.4f})")
     print(f"  (Std training confidence: {np.std(train_confidences):.4f})")
     
-    return model, {
+    return model, scaler, {
         'train_accuracy': train_accuracy,
         'test_accuracy': test_accuracy,
         'train_f1': train_f1,
@@ -229,25 +265,31 @@ def train_facial_recognition_model(X, y, model_type='random_forest'):
         'std_train_confidence': float(np.std(train_confidences))
     }
 
-def save_model(model, metrics, feature_cols):
+def save_model(model, scaler, label_encoder, metrics, feature_cols):
     """Save the trained model and metadata"""
     model_file = os.path.join(MODEL_DIR, "facial_recognition_model.pkl")
+    scaler_file = os.path.join(MODEL_DIR, "facial_recognition_scaler.pkl")
     metadata_file = os.path.join(MODEL_DIR, "facial_recognition_metadata.pkl")
     
     # Save model
     joblib.dump(model, model_file)
     print(f"\n✓ Model saved to: {model_file}")
     
-    # Save metadata
+    # Save scaler
+    joblib.dump(scaler, scaler_file)
+    print(f"✓ Scaler saved to: {scaler_file}")
+    
+    # Save metadata (including label encoder)
     metadata = {
         'metrics': metrics,
         'feature_columns': feature_cols,
-        'model_type': metrics['model_type']
+        'model_type': metrics['model_type'],
+        'label_encoder': label_encoder  # Save label encoder for predictions
     }
     joblib.dump(metadata, metadata_file)
     print(f"✓ Metadata saved to: {metadata_file}")
     
-    return model_file, metadata_file
+    return model_file, scaler_file, metadata_file
 
 def predict_member(image_features, model, feature_cols):
     """
@@ -284,7 +326,7 @@ def main():
     print("="*60)
     
     # Load data
-    X, y, df, feature_cols = load_and_prepare_data()
+    X, y, y_encoded, df, feature_cols, label_encoder = load_and_prepare_data()
     
     # Check if we have enough data
     if len(df) < 10:
@@ -310,14 +352,16 @@ def main():
     
     for model_type in model_types:
         try:
-            model, metrics = train_facial_recognition_model(X, y, model_type=model_type)
-            models_trained[model_type] = (model, metrics)
+            model, scaler, metrics = train_facial_recognition_model(X, y, y_encoded, label_encoder, model_type=model_type)
+            models_trained[model_type] = (model, scaler, metrics)
             
             if metrics['test_accuracy'] > best_score:
                 best_score = metrics['test_accuracy']
-                best_model = (model, metrics, model_type)
+                best_model = (model, scaler, metrics, model_type)
         except Exception as e:
             print(f"⚠ Error training {model_type}: {str(e)}")
+            import traceback
+            traceback.print_exc()
             continue
     
     if not models_trained:
@@ -326,9 +370,9 @@ def main():
     
     # Save best model
     if best_model:
-        model, metrics, model_type = best_model
+        model, scaler, metrics, model_type = best_model
         print(f"\n✓ Best model: {model_type} (Test Accuracy: {metrics['test_accuracy']:.4f})")
-        save_model(model, metrics, feature_cols)
+        save_model(model, scaler, label_encoder, metrics, feature_cols)
     
     # Summary
     print("\n" + "="*60)
