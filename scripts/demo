@@ -1,0 +1,107 @@
+#!/usr/bin/env python3
+
+"""
+A single-file script to simulate an "unauthorized attempt" on the
+ML-Pipeline-formative-2 project.
+
+This script follows the flow described by the user:
+1. Input face image -> Allows a call to the product model.
+2. Input voice -> Approves & displays the user to execute the prediction.
+
+The "unauthorized attempt" is simulated by having the face check pass,
+but the voice check (the "product model") fail.
+"""
+
+import time
+import random
+import sys
+
+# --- Configuration ---
+
+# These are just placeholder paths. The script doesn't read any real files.
+SIM_IMAGE_PATH = "data/simulated_user_face.jpg"
+SIM_UNAUTHORIZED_VOICE_PATH = "data/unauthorized_voice_sample.wav"
+
+
+# --- Mock Model Functions (Simulating your repo) ---
+
+def face_authentication_model(image_path: str) -> bool:
+    """
+    Mock function for the Face Recognition model.
+    In this simulation, we assume the face check passes to allow
+    the flow to proceed to the voice/product model.
+    """
+    print(f"[Face Model]   Analyzing image: {image_path}...")
+    time.sleep(1.5)
+    print("[Face Model]   Face recognized. Permission GRANTED to call product model.")
+    return True
+
+def product_model_voice_auth(audio_path: str) -> bool:
+    """
+    Mock function for the "Product Model" (which acts as voice auth).
+    This is where the "unauthorized" check happens.
+    """
+    print(f"[Product Model] Analyzing audio sample: {audio_path}...")
+    time.sleep(2)
+    
+    # This is the core of the unauthorized simulation
+    if "unauthorized" in audio_path:
+        print("[Product Model] Audio REJECTED. Voice does not match records.")
+        return False
+    else:
+        print("[Product Model] Audio APPROVED.")
+        return True
+
+def execute_prediction():
+    """
+    Mock function for the final transaction/prediction.
+    This should NOT be called if the simulation is successful.
+    """
+    print("\n------------------------------------------------")
+    print("[Prediction]   TRANSACTION APPROVED.")
+    print("[Prediction]   Executing final secure prediction...")
+    time.sleep(1)
+    prediction = random.choice(["Credit Score: 780", "Transaction OK", "Loan Approved"])
+    print(f"[Prediction]   Result: {prediction}")
+    print("------------------------------------------------")
+
+
+# --- Main Application Logic ---
+
+def run_simulation():
+    """
+    Runs the full transaction simulation for the command-line app.
+    """
+    print("=== ML Pipeline Transaction Simulation ===")
+    print("        (Simulating UNAUTHORIZED Attempt)")
+    print("------------------------------------------------")
+    
+    # --- Step 1: Input Face Image ---
+    print(f"\n[SYSTEM] Inputting face image: {SIM_IMAGE_PATH}")
+    is_face_allowed = face_authentication_model(SIM_IMAGE_PATH)
+    
+    if not is_face_allowed:
+        print("\n[SYSTEM] FINAL STATUS: Access Denied. Face authentication failed.")
+        print("=== Simulation END ===")
+        sys.exit()
+        
+    # --- Step 2: Input Voice (to "Product Model") ---
+    print("\n[SYSTEM] Face OK. Proceeding to Product Model (Voice Auth)...")
+    print(f"[SYSTEM] Inputting voice sample: {SIM_UNAUTHORIZED_VOICE_PATH}")
+    is_voice_approved = product_model_voice_auth(SIM_UNAUTHORIZED_VOICE_PATH)
+    
+    if not is_voice_approved:
+        print("\n[SYSTEM] FINAL STATUS: Access Denied. Unauthorized voice attempt.")
+        print("=== Simulation END ===")
+        sys.exit()
+        
+    # --- Step 3: Execute Prediction ---
+    # This part should not be reached in this simulation.
+    print("\n[SYSTEM] Voice Approved. Executing final prediction...")
+    execute_prediction()
+    print("\n[SYSTEM] FINAL STATUS: Transaction Complete.")
+    print("=== Simulation END ===")
+
+
+if __name__ == "__main__":
+    run_simulation()

@@ -1,8 +1,0 @@
-matplotlib
-opencv-python
-face_recognition
-librosa
-pillow
-scikit-image
-pillow-heif
-xgboost
