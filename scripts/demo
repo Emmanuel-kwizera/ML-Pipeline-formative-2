@@ -1,107 +1,286 @@
 #!/usr/bin/env python3
 
 """
-A single-file script to simulate an "unauthorized attempt" on the
-ML-Pipeline-formative-2 project.
+ML Pipeline Unauthorized Attempt Simulation Demo
 
-This script follows the flow described by the user:
-1. Input face image -> Allows a call to the product model.
-2. Input voice -> Approves & displays the user to execute the prediction.
+This script demonstrates an unauthorized attempt detection using:
+1. Facial Recognition Model - Verifies if the face is authorized
+2. Audio Voiceprint Verification - Simulates voice verification
 
-The "unauthorized attempt" is simulated by having the face check pass,
-but the voice check (the "product model") fail.
+Test scenarios:
+- Scenario 1: Unauthorized face (not in training data)
+- Scenario 2: Authorized face but wrong voice sample
+- Scenario 3: Complete unauthorized attempt (both fail)
 """
 
-import time
-import random
+import os
 import sys
+import time
+import joblib
+import numpy as np
+import sklearn
+
+# Add scripts directory to path
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+BASE_DIR = os.path.abspath(os.path.join(SCRIPT_DIR, ".."))
+sys.path.insert(0, SCRIPT_DIR)
+
+# Import facial recognition functions
+from facial_recognition_predict import is_authorized, predict_from_image
 
 # --- Configuration ---
+DATA_DIR = os.path.join(BASE_DIR, "data")
+MODEL_DIR = os.path.join(BASE_DIR, "models")
 
-# These are just placeholder paths. The script doesn't read any real files.
-SIM_IMAGE_PATH = "data/simulated_user_face.jpg"
-SIM_UNAUTHORIZED_VOICE_PATH = "data/unauthorized_voice_sample.wav"
+# Test images - using actual project images
+AUTHORIZED_IMAGE = os.path.join(DATA_DIR, "images", "kwizera_neutral.jpg")
+UNAUTHORIZED_IMAGE = os.path.join(DATA_DIR, "images", "kariza_neutral.jpeg")  # Not in training
+ANOTHER_PERSON_IMAGE = os.path.join(DATA_DIR, "images", "antony_neutral.heic")
+
+# Audio samples - using actual project audio files
+AUTHORIZED_AUDIO = os.path.join(DATA_DIR, "audio_data", "Emmanuel_Voice 1.m4a")
+UNAUTHORIZED_AUDIO = os.path.join(DATA_DIR, "audio_data", "Charlotte_Voice 1.m4a")
+VOICEPRINT_MODEL = os.path.join(MODEL_DIR, "voiceprint_verification_model.joblib")
 
 
-# --- Mock Model Functions (Simulating your repo) ---
+# --- Authentication Functions ---
 
-def face_authentication_model(image_path: str) -> bool:
+def verify_face(image_path):
     """
-    Mock function for the Face Recognition model.
-    In this simulation, we assume the face check passes to allow
-    the flow to proceed to the voice/product model.
+    Verify face using the trained facial recognition model
+    Returns: (is_authorized, member_name, confidence, message)
     """
-    print(f"[Face Model]   Analyzing image: {image_path}...")
-    time.sleep(1.5)
-    print("[Face Model]   Face recognized. Permission GRANTED to call product model.")
+    print(f"\n[FACE AUTH] Analyzing image: {os.path.basename(image_path)}")
+    print("[FACE AUTH] Processing image features...")
+    time.sleep(0.5)
+    
+    if not os.path.exists(image_path):
+        return False, None, 0.0, f"ERROR: Image file not found: {image_path}"
+    
+    try:
+        # Use actual facial recognition model
+        is_auth, member, confidence, message, is_unknown = is_authorized(image_path)
+        
+        print(f"[FACE AUTH] Prediction: {member}")
+        print(f"[FACE AUTH] Confidence: {confidence:.2%}")
+        
+        if is_unknown:
+            print("[FACE AUTH] [X] UNAUTHORIZED: Unknown face detected")
+            return False, member, confidence, message
+        elif is_auth:
+            print(f"[FACE AUTH] [OK] AUTHORIZED: Face recognized as {member}")
+            return True, member, confidence, message
+        else:
+            print("[FACE AUTH] [X] UNAUTHORIZED: Low confidence or unknown person")
+            return False, member, confidence, message
+            
+    except Exception as e:
+        error_msg = f"ERROR during face verification: {str(e)}"
+        print(f"[FACE AUTH] {error_msg}")
+        return False, None, 0.0, error_msg
+
+
+def verify_voice(audio_path, expected_member=None):
+    """
+    Simulate voice verification using audio file
+    In a real system, this would use the voiceprint model
+    Returns: (is_verified, confidence, message)
+    """
+    print(f"\n[VOICE AUTH] Analyzing audio: {os.path.basename(audio_path)}")
+    print("[VOICE AUTH] Extracting voice features...")
+    time.sleep(0.5)
+    
+    if not os.path.exists(audio_path):
+        return False, 0.0, f"ERROR: Audio file not found: {audio_path}"
+    
+    # Simulate voiceprint verification
+    # In real implementation, this would load the voiceprint model
+    audio_filename = os.path.basename(audio_path).lower()
+    
+    # Simple simulation: check if audio matches expected member
+    if expected_member:
+        if str(expected_member).lower() in audio_filename:
+            confidence = np.random.uniform(0.85, 0.95)
+            print(f"[VOICE AUTH] Voice match confidence: {confidence:.2%}")
+            print(f"[VOICE AUTH] [OK] VERIFIED: Voice matches {expected_member}")
+            return True, confidence, f"Voice verified for {expected_member}"
+        else:
+            confidence = np.random.uniform(0.15, 0.40)
+            print(f"[VOICE AUTH] Voice match confidence: {confidence:.2%}")
+            print(f"[VOICE AUTH] [X] REJECTED: Voice does not match {expected_member}")
+            return False, confidence, f"Voice mismatch detected"
+    else:
+        print("[VOICE AUTH] [X] REJECTED: No reference identity for voice verification")
+        return False, 0.0, "Cannot verify voice without face authorization"
+
+
+def execute_secure_transaction():
+    """
+    Execute the final secure transaction/prediction
+    This should only run if both face and voice are verified
+    """
+    print("\n" + "="*60)
+    print("EXECUTING SECURE TRANSACTION")
+    print("="*60)
+    print("[TRANSACTION] All authentication checks passed")
+    print("[TRANSACTION] Processing secure prediction...")
+    time.sleep(1)
+    
+    # Simulate transaction
+    predictions = [
+        "Credit Score Analysis: 780 (Good)",
+        "Transaction Approved: $5,000 limit",
+        "Account Access: Full privileges granted",
+        "Loan Application: Pre-approved"
+    ]
+    
+    prediction = np.random.choice(predictions)
+    print(f"[TRANSACTION] [OK] Result: {prediction}")
+    print("="*60)
+
+
+# --- Simulation Scenarios ---
+
+def scenario_unauthorized_face():
+    """Scenario 1: Unauthorized face (person not in training data)"""
+    print("\n" + "="*70)
+    print("SCENARIO 1: UNAUTHORIZED FACE ATTEMPT")
+    print("="*70)
+    print("Testing with: Face not in authorized database")
+    print("-"*70)
+    
+    # Step 1: Face verification
+    is_face_auth, member, confidence, message = verify_face(UNAUTHORIZED_IMAGE)
+    
+    if not is_face_auth:
+        print("\n" + "="*70)
+        print("[BLOCKED] ACCESS DENIED - UNAUTHORIZED FACE DETECTED")
+        print("="*70)
+        print(f"Reason: {message}")
+        print("Security Action: Transaction blocked, alert generated")
+        return False
+    
+    # If face passed (shouldn't happen), try voice
+    is_voice_verified, voice_conf, voice_msg = verify_voice(UNAUTHORIZED_AUDIO, member)
+    
+    if not is_voice_verified:
+        print("\n" + "="*70)
+        print("[BLOCKED] ACCESS DENIED - VOICE VERIFICATION FAILED")
+        print("="*70)
+        return False
+    
     return True
 
-def product_model_voice_auth(audio_path: str) -> bool:
-    """
-    Mock function for the "Product Model" (which acts as voice auth).
-    This is where the "unauthorized" check happens.
-    """
-    print(f"[Product Model] Analyzing audio sample: {audio_path}...")
+
+def scenario_wrong_voice():
+    """Scenario 2: Authorized face but wrong voice"""
+    print("\n" + "="*70)
+    print("SCENARIO 2: AUTHORIZED FACE + WRONG VOICE")
+    print("="*70)
+    print("Testing with: Correct face, incorrect voice sample")
+    print("-"*70)
+    
+    # Step 1: Face verification (should pass)
+    is_face_auth, member, confidence, message = verify_face(AUTHORIZED_IMAGE)
+    
+    if not is_face_auth:
+        print("\n" + "="*70)
+        print("[BLOCKED] ACCESS DENIED - FACE VERIFICATION FAILED")
+        print("="*70)
+        return False
+    
+    # Step 2: Voice verification with wrong voice (should fail)
+    is_voice_verified, voice_conf, voice_msg = verify_voice(UNAUTHORIZED_AUDIO, member)
+    
+    if not is_voice_verified:
+        print("\n" + "="*70)
+        print("[BLOCKED] ACCESS DENIED - VOICE MISMATCH DETECTED")
+        print("="*70)
+        print(f"Reason: Face authorized as '{member}' but voice does not match")
+        print("Security Action: Potential impersonation attempt logged")
+        return False
+    
+    return True
+
+
+def scenario_complete_authorization():
+    """Scenario 3: Successful authorization (both pass)"""
+    print("\n" + "="*70)
+    print("SCENARIO 3: COMPLETE AUTHORIZATION (Both Pass)")
+    print("="*70)
+    print("Testing with: Correct face and matching voice")
+    print("-"*70)
+    
+    # Step 1: Face verification
+    is_face_auth, member, confidence, message = verify_face(AUTHORIZED_IMAGE)
+    
+    if not is_face_auth:
+        print("\n" + "="*70)
+        print("[BLOCKED] ACCESS DENIED - FACE VERIFICATION FAILED")
+        print("="*70)
+        return False
+    
+    # Step 2: Voice verification with correct voice
+    is_voice_verified, voice_conf, voice_msg = verify_voice(AUTHORIZED_AUDIO, member)
+    
+    if not is_voice_verified:
+        print("\n" + "="*70)
+        print("[BLOCKED] ACCESS DENIED - VOICE VERIFICATION FAILED")
+        print("="*70)
+        return False
+    
+    # Both passed - execute transaction
+    execute_secure_transaction()
+    print("\n[OK] TRANSACTION COMPLETED SUCCESSFULLY")
+    return True
+
+
+# --- Main Demo ---
+
+def main():
+    """Run the complete demo simulation"""
+    print("="*70)
+    print("ML PIPELINE SECURITY DEMONSTRATION")
+    print("Multi-Factor Authentication: Face + Voice Verification")
+    print("="*70)
+    
+    # Check if models exist
+    print("\n[SYSTEM] Checking model availability...")
+    face_model_path = os.path.join(MODEL_DIR, "facial_recognition_model.pkl")
+    
+    if not os.path.exists(face_model_path):
+        print(f"ERROR: Facial recognition model not found at {face_model_path}")
+        print("Please train the model first by running facial_recognition_model.py")
+        sys.exit(1)
+    
+    print(f"[OK] Facial recognition model loaded")
+    print(f"[OK] Demo images available: {len(os.listdir(os.path.join(DATA_DIR, 'images')))} files")
+    print(f"[OK] Demo audio files available: {len([f for f in os.listdir(os.path.join(DATA_DIR, 'audio_data')) if f.endswith('.m4a')])} files")
+    
+    # Run scenarios
+    time.sleep(1)
+    
+    # Scenario 1: Unauthorized face
+    result1 = scenario_unauthorized_face()
     time.sleep(2)
     
-    # This is the core of the unauthorized simulation
-    if "unauthorized" in audio_path:
-        print("[Product Model] Audio REJECTED. Voice does not match records.")
-        return False
-    else:
-        print("[Product Model] Audio APPROVED.")
-        return True
-
-def execute_prediction():
-    """
-    Mock function for the final transaction/prediction.
-    This should NOT be called if the simulation is successful.
-    """
-    print("\n------------------------------------------------")
-    print("[Prediction]   TRANSACTION APPROVED.")
-    print("[Prediction]   Executing final secure prediction...")
-    time.sleep(1)
-    prediction = random.choice(["Credit Score: 780", "Transaction OK", "Loan Approved"])
-    print(f"[Prediction]   Result: {prediction}")
-    print("------------------------------------------------")
-
-
-# --- Main Application Logic ---
-
-def run_simulation():
-    """
-    Runs the full transaction simulation for the command-line app.
-    """
-    print("=== ML Pipeline Transaction Simulation ===")
-    print("        (Simulating UNAUTHORIZED Attempt)")
-    print("------------------------------------------------")
+    # Scenario 2: Wrong voice
+    result2 = scenario_wrong_voice()
+    time.sleep(2)
     
-    # --- Step 1: Input Face Image ---
-    print(f"\n[SYSTEM] Inputting face image: {SIM_IMAGE_PATH}")
-    is_face_allowed = face_authentication_model(SIM_IMAGE_PATH)
+    # Scenario 3: Complete authorization (optional - for comparison)
+    # Uncomment to test successful flow:
+    # result3 = scenario_complete_authorization()
     
-    if not is_face_allowed:
-        print("\n[SYSTEM] FINAL STATUS: Access Denied. Face authentication failed.")
-        print("=== Simulation END ===")
-        sys.exit()
-        
-    # --- Step 2: Input Voice (to "Product Model") ---
-    print("\n[SYSTEM] Face OK. Proceeding to Product Model (Voice Auth)...")
-    print(f"[SYSTEM] Inputting voice sample: {SIM_UNAUTHORIZED_VOICE_PATH}")
-    is_voice_approved = product_model_voice_auth(SIM_UNAUTHORIZED_VOICE_PATH)
-    
-    if not is_voice_approved:
-        print("\n[SYSTEM] FINAL STATUS: Access Denied. Unauthorized voice attempt.")
-        print("=== Simulation END ===")
-        sys.exit()
-        
-    # --- Step 3: Execute Prediction ---
-    # This part should not be reached in this simulation.
-    print("\n[SYSTEM] Voice Approved. Executing final prediction...")
-    execute_prediction()
-    print("\n[SYSTEM] FINAL STATUS: Transaction Complete.")
-    print("=== Simulation END ===")
+    # Summary
+    print("\n" + "="*70)
+    print("DEMO SUMMARY")
+    print("="*70)
+    print(f"Scenario 1 (Unauthorized Face):     {'[X] BLOCKED' if not result1 else '[OK] Passed'}")
+    print(f"Scenario 2 (Wrong Voice):           {'[X] BLOCKED' if not result2 else '[OK] Passed'}")
+    print("\n[OK] Security demonstration complete")
+    print("="*70)
 
 
 if __name__ == "__main__":
-    run_simulation()
+    main()
